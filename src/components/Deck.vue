@@ -1,0 +1,38 @@
+<script setup>
+import { ref } from 'vue'
+import { createDeck, shuffle } from '../utils/deck.js'
+
+const deck = ref(shuffle(createDeck()))
+defineExpose({ deck })
+</script>
+
+<template>
+  <!-- Render 3 overlapped card backs to represent the deck -->
+  <div class="deck">
+    <div
+      v-for="n in 3"
+      :key="n"
+      class="card-back"
+      :style="{ top: ((n - 1) * 3) + 'px', left: ((n - 1) * 3) + 'px' }"
+    ></div>
+  </div>
+</template>
+
+<style scoped>
+.deck {
+  position: relative;
+  width: 50px;
+  height: 70px;
+}
+
+/* Style for a card back */
+.card-back {
+  position: absolute;
+  width: 50px;
+  height: 70px;
+  border: 1px solid #333;
+  border-radius: 5px;
+  background: blue; /* card back color */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+</style>
