@@ -26,7 +26,7 @@ function toggleDrawer() {
     </Drawer>
 
     <BlackjackGame />
-    
+
   </div>
 </template>
 

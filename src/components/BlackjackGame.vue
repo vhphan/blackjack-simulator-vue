@@ -1,69 +1,93 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import Card from './Card.vue'
-import Deck from './Deck.vue'
-import { createDeck, shuffle } from '../utils/deck.js'
+import { computed, onMounted, watch } from 'vue'
+import Card from '@/components/Card.vue'
+import Deck from '@/components/Deck.vue'
+import { useGameStore, GameResult } from "@/store/gameStore.js";
+import { useSimulatorStore } from "@/store/simulatorStore.js";
+import Button from 'primevue/button';
+import { storeToRefs } from 'pinia'
+import { calculateTotal, determineResultForPlayer } from "@/utils/deck.js";
 
-// Get the Deck child component instance
-const deckComp = ref(null)
+const gameStore = useGameStore()
+const simulatorStore = useSimulatorStore()
 
-const dealerHand = ref([])
-const playerHands = ref([[]]) // support for multiple players
+const {
+  dealerHand,
+  playerHands,
+  playerMoney,
+  gameResult,
+} = storeToRefs(gameStore);
 
-function dealCard() {
-  // Access the deck from the Deck component instance
-  return deckComp.value.deck.shift() || { rank: 'N/A', suit: '' }
-}
+const {
+  dealCard,
+  startGame,
+  resetGame,
+  endGame,
+} = gameStore
 
-function startGame() {
-  // Reset the deck within Deck.vue
-  deckComp.value.deck = shuffle(createDeck())
-  dealerHand.value = [dealCard()] // Dealer gets only one card initially
-  playerHands.value[0] = [dealCard(), dealCard()]
-}
+const { totalHandsPlayed, runningCount } = storeToRefs(simulatorStore);
+
+const {
+  resetHandsPlayed,
+  incrementHandsPlayed,
+  updateRunningCount,
+  resetRunningCount,
+  resetSimulator,
+} = simulatorStore;
+
+const dealerTotal = computed(() => calculateTotal(dealerHand.value))
+const playerTotal = computed(() => calculateTotal(playerHands.value[0]))
 
 const isPlayerBust = computed(() => playerTotal.value > 21)
 
 function hit() {
   if (!isPlayerBust.value) {
-    playerHands.value[0].push(dealCard())
+    const card = dealCard();
+    playerHands.value[0].push(card);
+    updateRunningCount(card);
   }
 }
 
 function stand() {
-  // Logic for when the player stands (e.g., dealer's turn, determine winner)
-  // Placeholder for now
   console.log('Player stands')
+  dealerTurn()
 }
 
-function calculateTotal(hand) {
-  let total = 0
-  let aces = 0
-
-  hand.forEach(card => {
-    if (card.rank === 'A') {
-      aces += 1
-      total += 11
-    } else if (['K', 'Q', 'J'].includes(card.rank)) {
-      total += 10
-    } else {
-      total += parseInt(card.rank)
-    }
-  })
-
-  while (total > 21 && aces > 0) {
-    total -= 10
-    aces -= 1
+function dealerTurn() {
+  if (isPlayerBust.value) {
+    return;
   }
-
-  return total
+  while (calculateTotal(dealerHand.value) < 17) {
+    const card = dealCard();
+    dealerHand.value.push(card);
+    updateRunningCount(card);
+  }
+  const result = determineResultForPlayer(dealerTotal.value, playerTotal.value);
+  endGame(result);
+  incrementHandsPlayed();
 }
 
-const dealerTotal = computed(() => calculateTotal(dealerHand.value))
-const playerTotal = computed(() => calculateTotal(playerHands.value[0]))
+function resetSession() {
+  resetGame();
+  resetSimulator();
+  startGame(6);
+}
 
 onMounted(() => {
-  startGame()
+  startGame(6) // Use 6 decks by default
+  resetHandsPlayed()
+  resetRunningCount()
+
+  // Update running count for initial cards
+  dealerHand.value.forEach(card => updateRunningCount(card));
+  playerHands.value[0].forEach(card => updateRunningCount(card));
+})
+
+watch(isPlayerBust, (newVal) => {
+  if (newVal) {
+    endGame(GameResult.LOSE); // Player loses immediately if they go bust
+    incrementHandsPlayed();
+  }
 })
 </script>
 
@@ -74,22 +98,12 @@ onMounted(() => {
 
     <h2>Dealer's Hand (Total: {{ dealerTotal }})</h2>
     <div class="hand dealer-hand">
-      <Card
-        v-for="(card, index) in dealerHand"
-        :key="index"
-        :code="card.rank"
-        :suit="card.suit"
-      />
+      <Card v-for="(card, index) in dealerHand" :key="index" :code="card.rank" :suit="card.suit" />
     </div>
 
     <h2>Player's Hand (Total: {{ playerTotal }})</h2>
     <div class="hand player-hand">
-      <Card
-        v-for="(card, index) in playerHands[0]"
-        :key="index"
-        :code="card.rank"
-        :suit="card.suit"
-      />
+      <Card v-for="(card, index) in playerHands[0]" :key="index" :code="card.rank" :suit="card.suit" />
     </div>
 
     <div v-if="isPlayerBust" class="bust-message">Player is bust!</div>
@@ -99,7 +113,26 @@ onMounted(() => {
       <Button @click="stand">Stand</Button>
     </div>
 
-    <Button class="restart-button" @click="startGame">Restart Game</Button>
+    <div class="game-controls">
+      <Button class="restart-button" @click="startGame(6)">Restart Game</Button>
+      <Button class="reset-session-button" @click="resetSession">Reset Session</Button>
+    </div>
+
+    <div class="player-money">
+      Player's Money: ${{ playerMoney }}
+    </div>
+
+    <div class="hands-played">
+      Total Hands Played: {{ totalHandsPlayed }}
+    </div>
+
+    <div class="running-count">
+      Running Count: {{ runningCount }}
+    </div>
+
+    <div v-if="gameResult === GameResult.WIN" class="game-result win">Player wins!</div>
+    <div v-if="gameResult === GameResult.LOSE" class="game-result lose">Player loses!</div>
+    <div v-if="gameResult === GameResult.TIE" class="game-result tie">It's a tie!</div>
   </div>
 </template>
 
@@ -113,16 +146,54 @@ onMounted(() => {
 .player-actions {
   margin-top: 1rem;
   display: flex;
-  gap: 10px; /* Add spacing between buttons */
+  gap: 10px;
+  /* Add spacing between buttons */
 }
 
-.restart-button {
-  margin-top: 1rem; /* Add margin above the restart button */
+.game-controls {
+  margin-top: 1rem;
+  display: flex;
+  gap: 10px;
+  /* Add spacing between buttons */
 }
+
+
 
 .bust-message {
   color: red;
   font-weight: bold;
   margin-top: 1rem;
+}
+
+.player-money {
+  margin-top: 1rem;
+  font-weight: bold;
+}
+
+.hands-played {
+  margin-top: 1rem;
+  font-weight: bold;
+}
+
+.running-count {
+  margin-top: 1rem;
+  font-weight: bold;
+}
+
+.game-result {
+  margin-top: 1rem;
+  font-weight: bold;
+}
+
+.win {
+  color: green;
+}
+
+.lose {
+  color: red;
+}
+
+.tie {
+  color: orange;
 }
 </style>

@@ -32,7 +32,13 @@ defineExpose({ deck })
   height: 70px;
   border: 1px solid #333;
   border-radius: 5px;
-  background: blue; /* card back color */
+  background: repeating-linear-gradient(
+    45deg,
+    darkgreen,
+    rgb(149, 190, 149) 5px,
+    #0c1d0c 5px,
+    #05e405 10px
+  ); /* Pattern of squares */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 </style>
