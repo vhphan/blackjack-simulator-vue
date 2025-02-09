@@ -25,7 +25,7 @@ const {
   endGame,
 } = gameStore
 
-const { totalHandsPlayed, runningCount } = storeToRefs(simulatorStore);
+const { totalHandsPlayed, runningCount, trueCount, totalCardsDealt, decksRemaining } = storeToRefs(simulatorStore);
 
 const {
   resetHandsPlayed,
@@ -33,6 +33,7 @@ const {
   updateRunningCount,
   resetRunningCount,
   resetSimulator,
+  incrementCardsDealt,
 } = simulatorStore;
 
 const dealerTotal = computed(() => calculateTotal(dealerHand.value))
@@ -45,6 +46,7 @@ function hit() {
     const card = dealCard();
     playerHands.value[0].push(card);
     updateRunningCount(card);
+    incrementCardsDealt();
   }
 }
 
@@ -61,6 +63,7 @@ function dealerTurn() {
     const card = dealCard();
     dealerHand.value.push(card);
     updateRunningCount(card);
+    incrementCardsDealt();
   }
   const result = determineResultForPlayer(dealerTotal.value, playerTotal.value);
   endGame(result);
@@ -79,8 +82,14 @@ onMounted(() => {
   resetRunningCount()
 
   // Update running count for initial cards
-  dealerHand.value.forEach(card => updateRunningCount(card));
-  playerHands.value[0].forEach(card => updateRunningCount(card));
+  dealerHand.value.forEach(card => {
+    updateRunningCount(card);
+    incrementCardsDealt();
+  });
+  playerHands.value[0].forEach(card => {
+    updateRunningCount(card);
+    incrementCardsDealt();
+  });
 })
 
 watch(isPlayerBust, (newVal) => {
@@ -118,16 +127,31 @@ watch(isPlayerBust, (newVal) => {
       <Button class="reset-session-button" @click="resetSession">Reset Session</Button>
     </div>
 
-    <div class="player-money">
-      Player's Money: ${{ playerMoney }}
-    </div>
-
-    <div class="hands-played">
-      Total Hands Played: {{ totalHandsPlayed }}
-    </div>
-
-    <div class="running-count">
-      Running Count: {{ runningCount }}
+    <div class="dashboard">
+      <div class="dashboard-item">
+        <span class="label">Player's Money:</span>
+        <span class="value">${{ playerMoney }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Total Hands Played:</span>
+        <span class="value">{{ totalHandsPlayed }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Running Count:</span>
+        <span class="value">{{ runningCount }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">True Count:</span>
+        <span class="value">{{ trueCount }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Total Cards Dealt:</span>
+        <span class="value">{{ totalCardsDealt }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Decks Remaining:</span>
+        <span class="value">{{ decksRemaining.toFixed(2) }}</span>
+      </div>
     </div>
 
     <div v-if="gameResult === GameResult.WIN" class="game-result win">Player wins!</div>
@@ -157,27 +181,36 @@ watch(isPlayerBust, (newVal) => {
   /* Add spacing between buttons */
 }
 
+.dashboard {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
 
+.dashboard-item {
+  background: #d1d0d0;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  border: solid 1px #a7a7a7;
+}
+
+.dashboard-item .label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-item .value {
+  font-size: 1.5rem;
+  color: #333;
+}
 
 .bust-message {
   color: red;
   font-weight: bold;
   margin-top: 1rem;
-}
-
-.player-money {
-  margin-top: 1rem;
-  font-weight: bold;
-}
-
-.hands-played {
-  margin-top: 1rem;
-  font-weight: bold;
-}
-
-.running-count {
-  margin-top: 1rem;
-  font-weight: bold;
 }
 
 .game-result {
