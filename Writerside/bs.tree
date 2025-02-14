@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE instance-profile
+        SYSTEM "https://resources.jetbrains.com/writerside/1.0/product-profile.dtd">
+
+<instance-profile id="bs"
+                 name="Blackjack Simulator"
+                 start-page="About-Blackjack-Simulator.md">
+
+    <toc-element topic="About-Blackjack-Simulator.md">
+    </toc-element>
+    <toc-element topic="Blackjack-Simulator-Project.md"/>
+    <toc-element topic="Components.md">
+        <toc-element topic="Playing-Card.md"/>
+        <toc-element topic="Playing-Deck.md"/>
+    </toc-element>
+</instance-profile>

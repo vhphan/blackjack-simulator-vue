@@ -1,7 +1,7 @@
 export const suits = ['♠️', '♥️', '♦️', '♣️'];
 export const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-export function createDeck(numDecks = 1) {
+export function createDeck(numDecks) {
   const deck = [];
   for (let i = 0; i < numDecks; i++) {
     for (const suit of suits) {

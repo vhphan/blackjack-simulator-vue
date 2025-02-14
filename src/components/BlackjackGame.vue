@@ -1,45 +1,59 @@
 <script setup>
-import { computed, onMounted, watch } from 'vue'
-import Card from '@/components/Card.vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import Deck from '@/components/Deck.vue'
-import { useGameStore, GameResult } from "@/store/gameStore.js";
-import { useSimulatorStore } from "@/store/simulatorStore.js";
+import { GameResult, useGameStore } from "@/store/gameStore.js";
+// Removed: import {useSimulatorStore} from "@/store/simulatorStore.js";
 import Button from 'primevue/button';
+import Message from 'primevue/message';
 import { storeToRefs } from 'pinia'
 import { calculateTotal, determineResultForPlayer } from "@/utils/deck.js";
+import { getBlackjackMove } from "@/strategy/strategy.js";
+import Hand from '@/components/Hand.vue'
 
-const gameStore = useGameStore()
-const simulatorStore = useSimulatorStore()
+const autoPlay = ref(false);
 
+const gameStore = useGameStore();
+
+// Deconstruct both game and simulator state from gameStore
 const {
   dealerHand,
   playerHands,
   playerMoney,
+  betAmount,
   gameResult,
+  deck,
+  decksRemaining,
+  runningCount,
+  trueCount,
+  totalHandsPlayed,
+  totalCardsDealt,
 } = storeToRefs(gameStore);
 
 const {
+  resetDeck,
   dealCard,
-  startGame,
-  resetGame,
+  resetSession,
   endGame,
-} = gameStore
-
-const { totalHandsPlayed, runningCount, trueCount, totalCardsDealt, decksRemaining } = storeToRefs(simulatorStore);
-
-const {
+  maxNumberOfHands,
   resetHandsPlayed,
-  incrementHandsPlayed,
   updateRunningCount,
   resetRunningCount,
   resetSimulator,
   incrementCardsDealt,
-} = simulatorStore;
+} = gameStore;
 
 const dealerTotal = computed(() => calculateTotal(dealerHand.value))
 const playerTotal = computed(() => calculateTotal(playerHands.value[0]))
-
 const isPlayerBust = computed(() => playerTotal.value > 21)
+
+// New computed property for remaining cards
+const remainingCards = computed(() => deck.value.length);
+
+// New computed property for total winnings
+const totalWinnings = computed(() => playerMoney.value - 1000);
+
+// New computed property for low deck condition (threshold: 15 cards)
+const notEnoughCards = computed(() => deck.value.length <= 30);
 
 function hit() {
   if (!isPlayerBust.value) {
@@ -48,6 +62,7 @@ function hit() {
     updateRunningCount(card);
     incrementCardsDealt();
   }
+  if (isPlayerBust.value) dealerTurn();
 }
 
 function stand() {
@@ -55,65 +70,108 @@ function stand() {
   dealerTurn()
 }
 
+function continueAutoPlay() {
+  if (autoPlay.value && totalHandsPlayed.value < maxNumberOfHands && deck.value.length > 30) {
+    setTimeout(() => {
+      gameStore.startGame();
+      playAutomatically();
+    }, 2000);
+  }
+}
+
 function dealerTurn() {
+
   if (isPlayerBust.value) {
+    const result = GameResult.LOSE;
+    endGame(result);
+    continueAutoPlay();
     return;
   }
+
   while (calculateTotal(dealerHand.value) < 17) {
     const card = dealCard();
     dealerHand.value.push(card);
     updateRunningCount(card);
     incrementCardsDealt();
   }
+
   const result = determineResultForPlayer(dealerTotal.value, playerTotal.value);
   endGame(result);
-  incrementHandsPlayed();
+  continueAutoPlay();
+
 }
 
-function resetSession() {
-  resetGame();
+function reset() {
+  resetSession();
   resetSimulator();
-  startGame(6);
+  gameStore.startGame();
 }
+
+function playAutomatically() {
+
+  function playNextMove() {
+    if (gameResult.value === GameResult.START) {
+      const move = getBlackjackMove(playerHands.value[0], dealerHand.value[0], playerTotal.value);
+      if (move === 'H') {
+        hit();
+      } else if (move === 'S' || move === 'Ds') {
+        stand();
+      } else if (move === 'D') {
+        hit(); // Assuming double down is not implemented, treat it as a hit
+      } else {
+        console.error('No valid move found');
+      }
+    }
+  }
+
+  while (gameResult.value === GameResult.START) {
+    playNextMove();
+  }
+
+}
+
+// New function to stop autoplay
+function stopAutoPlay() {
+  autoPlay.value = false;
+}
+
+// Modified onMounted hook
+onMounted(() => {
+  resetDeck();
+  // Removed: gameStore.startGame() and initial card dealing
+});
+
+const messageSeverity = computed(() => {
+  return {
+    [GameResult.START]: 'info',
+    [GameResult.LOSE]: 'error',
+    [GameResult.WIN]: 'success',
+    [GameResult.TIE]: 'warn',
+  }[gameResult.value];
+});
 
 onMounted(() => {
-  startGame(6) // Use 6 decks by default
-  resetHandsPlayed()
-  resetRunningCount()
 
-  // Update running count for initial cards
-  dealerHand.value.forEach(card => {
-    updateRunningCount(card);
-    incrementCardsDealt();
-  });
-  playerHands.value[0].forEach(card => {
-    updateRunningCount(card);
-    incrementCardsDealt();
-  });
-})
-
-watch(isPlayerBust, (newVal) => {
-  if (newVal) {
-    endGame(GameResult.LOSE); // Player loses immediately if they go bust
-    incrementHandsPlayed();
-  }
-})
+});
 </script>
 
 <template>
   <div class="blackjack-game">
     <!-- Include the Deck component and set a ref to access its deck -->
-    <Deck ref="deckComp" />
+    <Deck ref="deckComp" :deck="deck" />
+
+    <Message v-if="notEnoughCards" severity="error" size="large"
+             style="margin-top: 10px;">
+      Not enough cards left in the deck!
+    </Message>
 
     <h2>Dealer's Hand (Total: {{ dealerTotal }})</h2>
-    <div class="hand dealer-hand">
-      <Card v-for="(card, index) in dealerHand" :key="index" :code="card.rank" :suit="card.suit" />
-    </div>
+    <Hand :hand="dealerHand" />
 
     <h2>Player's Hand (Total: {{ playerTotal }})</h2>
-    <div class="hand player-hand">
-      <Card v-for="(card, index) in playerHands[0]" :key="index" :code="card.rank" :suit="card.suit" />
-    </div>
+    <Hand :hand="playerHands[0]" class="player-hand">
+      <div class="chips" :style="{ height: betAmount + 'px' }"></div>
+    </Hand>
 
     <div v-if="isPlayerBust" class="bust-message">Player is bust!</div>
 
@@ -123,48 +181,108 @@ watch(isPlayerBust, (newVal) => {
     </div>
 
     <div class="game-controls">
-      <Button class="restart-button" @click="startGame(6)">Restart Game</Button>
-      <Button class="reset-session-button" @click="resetSession">Reset Session</Button>
+      <Button class="restart-button" @click="gameStore.startGame">New Game</Button>
+      <Button class="reset-session-button" @click="reset">Reset</Button>
+      <Button class="auto-play-button"
+        @click="() => { autoPlay = true; gameStore.startGame(); playAutomatically(); }">Auto Play
+      </Button>
+      <Button class="stop-auto-play-button" @click="stopAutoPlay">Stop Auto Play</Button>
     </div>
 
     <div class="dashboard">
+
       <div class="dashboard-item">
-        <span class="label">Player's Money:</span>
-        <span class="value">${{ playerMoney }}</span>
+        <span class="label">Player's Pot:</span>
+        <span class="value">{{ playerMoney }}</span>
       </div>
+
       <div class="dashboard-item">
         <span class="label">Total Hands Played:</span>
         <span class="value">{{ totalHandsPlayed }}</span>
       </div>
-      <div class="dashboard-item">
-        <span class="label">Running Count:</span>
-        <span class="value">{{ runningCount }}</span>
-      </div>
-      <div class="dashboard-item">
-        <span class="label">True Count:</span>
-        <span class="value">{{ trueCount }}</span>
-      </div>
-      <div class="dashboard-item">
-        <span class="label">Total Cards Dealt:</span>
-        <span class="value">{{ totalCardsDealt }}</span>
-      </div>
+
       <div class="dashboard-item">
         <span class="label">Decks Remaining:</span>
         <span class="value">{{ decksRemaining.toFixed(2) }}</span>
       </div>
+
+      <div class="dashboard-item">
+        <span class="label">Total Cards Dealt:</span>
+        <span class="value">{{ totalCardsDealt }}</span>
+      </div>
+
+      <div class="dashboard-item">
+        <span class="label">Running Count:</span>
+        <span class="value">{{ runningCount }}</span>
+      </div>
+
+      <div class="dashboard-item">
+        <span class="label">True Count:</span>
+        <span class="value">{{ trueCount }}</span>
+      </div>
+
+      <div class="dashboard-item">
+        <span class="label">Bet Amount:</span>
+        <span class="value">${{ betAmount }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Game Result:</span>
+        <span class="value">{{ gameResult }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Remaining Cards:</span>
+        <span class="value">{{ remainingCards }}</span>
+      </div>
+      <div class="dashboard-item">
+        <span class="label">Total Winnings:</span>
+        <span class="value" :style="{ color: totalWinnings < 0 ? 'red' : 'inherit' }">{{ totalWinnings }}</span>
+      </div>
     </div>
 
-    <div v-if="gameResult === GameResult.WIN" class="game-result win">Player wins!</div>
-    <div v-if="gameResult === GameResult.LOSE" class="game-result lose">Player loses!</div>
-    <div v-if="gameResult === GameResult.TIE" class="game-result tie">It's a tie!</div>
+
+    <div style="margin-top: 10px;">
+      <Message v-if="gameResult === GameResult.WIN" class="game-result win" :severity="messageSeverity" size="large">
+        Player wins!
+      </Message>
+
+      <Message v-else-if="gameResult === GameResult.LOSE" class="game-result lose" :severity="messageSeverity"
+        size="large">
+        Player loses!
+      </Message>
+
+      <Message v-else-if="gameResult === GameResult.TIE" class="game-result tie" :severity="messageSeverity"
+        size="large">
+        It's a tie!
+      </Message>
+
+      <Message :severity="messageSeverity" size="large" v-else>
+        Game Status is `{{ gameResult }}`
+      </Message>
+
+    </div>
+
   </div>
 </template>
+
 
 <style scoped>
 .hand {
   display: flex;
   gap: 5px;
   margin-bottom: 1rem;
+}
+
+.player-hand {
+  position: relative;
+}
+
+.chips {
+  /* Removed absolute positioning */
+  margin-left: 10px;
+  width: 30px;
+  background: radial-gradient(circle, #ff0000, #cc0000);
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .player-actions {
@@ -204,7 +322,7 @@ watch(isPlayerBust, (newVal) => {
 
 .dashboard-item .value {
   font-size: 1.5rem;
-  color: #333;
+  color: var(--p-green-600);
 }
 
 .bust-message {

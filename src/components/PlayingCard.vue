@@ -1,14 +1,14 @@
 <script setup>
-const { code, suit } = defineProps({
-  code: { type: String, required: true },
+const {rank, suit } = defineProps({
+  rank: { type: String, required: true },
   suit: { type: String, required: true }
 })
 </script>
 
 <template>
   <div class="card">
-    <span class="card-code" :class="{ red: suit==='♥️' || suit==='♦️', black: suit==='♠️' || suit==='♣️' }">
-      {{ code }}
+    <span class="card-rank" :class="{ red: suit==='♥️' || suit==='♦️', black: suit==='♠️' || suit==='♣️' }">
+      {{ rank }}
     </span>
     <span class="card-suit">{{ suit }}</span>
   </div>
@@ -27,7 +27,7 @@ const { code, suit } = defineProps({
   background: white;
 }
 
-.card-code {
+.card-rank {
   font-size: 1.5rem;
 }
 

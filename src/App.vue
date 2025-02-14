@@ -4,6 +4,7 @@ import BlackjackGame from './components/BlackjackGame.vue';
 
 import Drawer from 'primevue/drawer';
 import Button from 'primevue/button';
+import PlayingCard from '@/components/PlayingCard.vue';
 
 
 
@@ -16,6 +17,8 @@ function toggleDrawer() {
 
 <template>
   <div class="game-container">
+
+    <PlayingCard rank="2" suit="♥️" style="margin-bottom: 10px;"/>
 
     <Button icon="pi pi-bars" class="hamburger-menu" @click="toggleDrawer" v-show="!visibleRight" />
 

@@ -1,9 +1,12 @@
 <script setup>
-import { ref } from 'vue'
-import { createDeck, shuffle } from '../utils/deck.js'
 
-const deck = ref(shuffle(createDeck()))
-defineExpose({ deck })
+const props = defineProps({
+  deck: {
+    type: Array,
+    required: true
+  }
+})
+
 </script>
 
 <template>
