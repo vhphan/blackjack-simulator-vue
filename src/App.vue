@@ -18,8 +18,6 @@ function toggleDrawer() {
 <template>
   <div class="game-container">
 
-    <PlayingCard rank="2" suit="♥️" style="margin-bottom: 10px;"/>
-
     <Button icon="pi pi-bars" class="hamburger-menu" @click="toggleDrawer" v-show="!visibleRight" />
 
     <Drawer v-model:visible="visibleRight" header="Right Drawer" position="right">

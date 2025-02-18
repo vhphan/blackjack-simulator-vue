@@ -25,16 +25,21 @@ export function calculateTotal(hand) {
   let total = 0
   let aces = 0
 
-  hand.forEach(card => {
-    if (card.rank === 'A') {
-      aces += 1
-      total += 11
-    } else if (['K', 'Q', 'J'].includes(card.rank)) {
-      total += 10
-    } else {
-      total += parseInt(card.rank)
-    }
-  })
+  try {
+    hand.forEach(card => {
+      if (card.rank === 'A') {
+        aces += 1
+        total += 11
+      } else if (['K', 'Q', 'J'].includes(card.rank)) {
+        total += 10
+      } else {
+        total += parseInt(card.rank)
+      }
+    })
+  } catch (e) {
+    console.log(e);
+    throw e;
+  }
 
   while (total > 21 && aces > 0) {
     total -= 10

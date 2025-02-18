@@ -82,11 +82,17 @@ export function getBlackjackMove(playerHand, dealerUpcard, playerTotal) {
     let result;
 
     // Handle soft totals
-    if (hasAce && playerTotal < 21 && playerHand.length === 2) {
+    // New case: if player has 2 cards and both are aces
+    if (playerHand.length === 2 && playerHand[0].rank === 'A' && playerHand[1].rank === 'A') {
+        result = blackjackStrategy.soft['A,A']?.[upcardValue] || "Invalid"; // Until split is implemented, treat as hit
+
+    } else if (hasAce && playerTotal < 21 && playerHand.length === 2) {
         result = blackjackStrategy.soft[`A,${playerTotal - 11}`]?.[upcardValue] || "Invalid";
+
     } else {
         // Handle hard totals
         result = blackjackStrategy.hard[playerTotal]?.[upcardValue] || "Invalid";
+
     }
 
     if (result === 'Invalid') {

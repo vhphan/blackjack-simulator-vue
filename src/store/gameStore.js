@@ -1,5 +1,5 @@
-import {defineStore} from 'pinia';
-import {createDeck, shuffle} from '../utils/deck.js';
+import { defineStore } from 'pinia';
+import { createDeck, shuffle } from '../utils/deck.js';
 
 export const GameResult = Object.freeze({
   START: 'start',
@@ -11,14 +11,21 @@ export const GameResult = Object.freeze({
 export const useGameStore = defineStore('game', {
   state: () => ({
     dealerHand: [],
-    playerHands: [[]], // support for multiple players
+    // Each player now has an "initialMoney" property.
+    players: [
+      {
+        name: 'Player 1',
+        money: 1000,
+        initialMoney: 1000,
+        hands: []
+      }
+      // Additional players can be added here.
+    ],
     deck: [],
-    playerMoney: 1000, // Initial player's money
-    betAmount: 10, // Initial bet amount
-    gameResult: '', // Track game result
+    betAmount: 10,
+    gameResult: '',
     maxNumberOfHands: 500,
     numDecks: 6,
-    // --- Merged simulatorStore state ---
     totalHandsPlayed: 0,
     runningCount: 0,
     totalCardsDealt: 0
@@ -36,25 +43,43 @@ export const useGameStore = defineStore('game', {
     },
 
     startGame() {
-
+      // Do not start game if any player has no money
+      const unableToBet = this.players.some(player => player.money <= 0);
+      if (unableToBet) {
+        this.gameResult = GameResult.LOSE;
+        return;
+      }
       this.updateBetAmount();
-      this.dealerHand = [this.dealCard()]; // Dealer gets only one card initially
-      this.playerHands[0] = [this.dealCard(), this.dealCard()];
+      this.dealerHand = [this.dealCard()]; // Dealer gets one card initially
+      this.players.forEach(player => {
+        // Reset hands to an empty array and add a new hand with dealt cards and null result
+        player.hands = [];
+        player.hands.push({
+          cards: [this.dealCard(), this.dealCard()],
+          result: null
+        });
+      });
       this.gameResult = GameResult.START;
-
     },
 
-    updatePlayerMoney(amount) {
-      this.playerMoney += amount;
+    updatePlayerMoney(playerIndex, amount) {
+      this.players[playerIndex].money += amount;
     },
 
     endGame(result) {
       if (Object.values(GameResult).includes(result)) {
+        // For each player, update the result of the active hand (here, the first hand)
+        this.players.forEach(player => {
+          if (player.hands.length > 0) {
+            player.hands[0].result = result;
+          }
+        });
         if (result === GameResult.WIN) {
-          this.updatePlayerMoney(this.betAmount);
+          // Example: update money for first player; extend as needed for multiple players
+          this.updatePlayerMoney(0, this.betAmount);
           this.gameResult = GameResult.WIN;
         } else if (result === GameResult.LOSE) {
-          this.updatePlayerMoney(-this.betAmount);
+          this.updatePlayerMoney(0, -this.betAmount);
           this.gameResult = GameResult.LOSE;
         } else {
           this.gameResult = GameResult.TIE;
@@ -65,15 +90,17 @@ export const useGameStore = defineStore('game', {
 
     resetSession() {
       this.dealerHand = [];
-      this.playerHands = [[]];
+      this.players.forEach(player => {
+        player.hands = [];
+        // Reset money from initialMoney
+        player.money = player.initialMoney;
+      });
       this.resetDeck();
-      this.playerMoney = 1000;
       this.betAmount = 10;
       this.gameResult = '';
     },
 
     updateBetAmount() {
-
       const betMapping = [
         { min: 4, bet: 100 },
         { min: 3, bet: 80 },
@@ -81,9 +108,7 @@ export const useGameStore = defineStore('game', {
         { min: 1, bet: 20 },
         { min: -Infinity, bet: 10 }
       ];
-
       this.betAmount = betMapping.find(mapping => parseFloat(this.trueCount) >= mapping.min).bet;
-
     },
 
     // --- Merged simulatorStore actions ---
@@ -94,19 +119,13 @@ export const useGameStore = defineStore('game', {
       this.totalHandsPlayed++;
     },
     updateRunningCount(card) {
-      // Update runningCount based on card value logic; for example:
-      // if(card.value >= 2 && card.value <= 6) this.runningCount++;
-      // else if(card.value === 10 || card.value === 'A') this.runningCount--;
       const lowCards = ['2', '3', '4', '5', '6'];
       const highCards = ['10', 'J', 'Q', 'K', 'A'];
-
       if (lowCards.includes(card.rank)) {
         this.runningCount += 1;
       } else if (highCards.includes(card.rank)) {
         this.runningCount -= 1;
       }
-      // Neutral cards (7, 8, 9) do not change the running count
-
     },
     resetRunningCount() {
       this.runningCount = 0;

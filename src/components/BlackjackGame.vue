@@ -17,7 +17,6 @@ const gameStore = useGameStore();
 // Deconstruct both game and simulator state from gameStore
 const {
   dealerHand,
-  playerHands,
   playerMoney,
   betAmount,
   gameResult,
@@ -27,6 +26,7 @@ const {
   trueCount,
   totalHandsPlayed,
   totalCardsDealt,
+  players  // New: players array
 } = storeToRefs(gameStore);
 
 const {
@@ -43,22 +43,30 @@ const {
 } = gameStore;
 
 const dealerTotal = computed(() => calculateTotal(dealerHand.value))
-const playerTotal = computed(() => calculateTotal(playerHands.value[0]))
-const isPlayerBust = computed(() => playerTotal.value > 21)
+
+const isPlayerBust = computed(() => {
+  const hand = players.value[0]?.hands[0];
+  if (!hand || !hand.cards) return false;
+  return calculateTotal(hand.cards) > 21;
+});
 
 // New computed property for remaining cards
 const remainingCards = computed(() => deck.value.length);
 
 // New computed property for total winnings
-const totalWinnings = computed(() => playerMoney.value - 1000);
+const totalWinnings = computed(() => {
+  return players.value.reduce((total, player) => total + (player.money - player.initialMoney), 0);
+});
 
 // New computed property for low deck condition (threshold: 15 cards)
 const notEnoughCards = computed(() => deck.value.length <= 30);
 
+// For hitting, update first player's current hand's "cards" array.
 function hit() {
   if (!isPlayerBust.value) {
     const card = dealCard();
-    playerHands.value[0].push(card);
+    // Push card into the "cards" property of the active hand
+    players.value[0].hands[0].cards.push(card);
     updateRunningCount(card);
     incrementCardsDealt();
   }
@@ -95,7 +103,7 @@ function dealerTurn() {
     incrementCardsDealt();
   }
 
-  const result = determineResultForPlayer(dealerTotal.value, playerTotal.value);
+  const result = determineResultForPlayer(dealerTotal.value, calculateTotal(players.value[0].hands[0].cards));
   endGame(result);
   continueAutoPlay();
 
@@ -107,11 +115,12 @@ function reset() {
   gameStore.startGame();
 }
 
+// In playAutomatically and getBlackjackMove usage, refer to players[0].hands[0].cards
 function playAutomatically() {
 
   function playNextMove() {
     if (gameResult.value === GameResult.START) {
-      const move = getBlackjackMove(playerHands.value[0], dealerHand.value[0], playerTotal.value);
+      const move = getBlackjackMove(players.value[0].hands[0].cards, dealerHand.value[0], calculateTotal(players.value[0].hands[0].cards));
       if (move === 'H') {
         hit();
       } else if (move === 'S' || move === 'Ds') {
@@ -160,18 +169,26 @@ onMounted(() => {
     <!-- Include the Deck component and set a ref to access its deck -->
     <Deck ref="deckComp" :deck="deck" />
 
-    <Message v-if="notEnoughCards" severity="error" size="large"
-             style="margin-top: 10px;">
+    <Message v-if="notEnoughCards" severity="error" size="large" style="margin-top: 10px;">
       Not enough cards left in the deck!
     </Message>
 
     <h2>Dealer's Hand (Total: {{ dealerTotal }})</h2>
     <Hand :hand="dealerHand" />
 
-    <h2>Player's Hand (Total: {{ playerTotal }})</h2>
-    <Hand :hand="playerHands[0]" class="player-hand">
-      <div class="chips" :style="{ height: betAmount + 'px' }"></div>
-    </Hand>
+    <!-- Display each player's hands and show hand result -->
+    <div v-for="(player, pIndex) in players" :key="pIndex" class="player-section">
+      <h2>{{ player.name }}'s Hands</h2>
+      <div v-for="(handObj, hIndex) in player.hands" :key="hIndex">
+        <Hand :hand="handObj.cards" class="player-hand">
+          <div class="chips" :style="{ height: betAmount + 'px' }"></div>
+        </Hand>
+        <!-- Show result if available -->
+        <div v-if="handObj.result" class="hand-result">
+          Result: {{ handObj.result }}
+        </div>
+      </div>
+    </div>
 
     <div v-if="isPlayerBust" class="bust-message">Player is bust!</div>
 
@@ -190,12 +207,17 @@ onMounted(() => {
     </div>
 
     <div class="dashboard">
-
-      <div class="dashboard-item">
-        <span class="label">Player's Pot:</span>
-        <span class="value">{{ playerMoney }}</span>
+      <div class="dashboard-item" v-for="(player, index) in players" :key="index">
+        <span class="label">{{ player.name }}'s Pot:</span>
+        <span class="value">{{ player.money }}</span>
       </div>
-
+      <!-- New dashboard item: Display winnings per player -->
+      <div class="dashboard-item" v-for="(player, index) in players" :key="'winnings-' + index">
+        <span class="label">{{ player.name }}'s Winnings:</span>
+        <span class="value" :style="{ color: (player.money - player.initialMoney) < 0 ? 'red' : 'inherit' }">
+          {{ player.money - player.initialMoney }}
+        </span>
+      </div>
       <div class="dashboard-item">
         <span class="label">Total Hands Played:</span>
         <span class="value">{{ totalHandsPlayed }}</span>
