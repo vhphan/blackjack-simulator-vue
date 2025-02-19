@@ -49,7 +49,7 @@ export function calculateTotal(hand) {
   return total
 }
 
-export function determineResultForPlayer(dealerTotalValue, playerTotalValue) {
+export function determineResultForHand(dealerTotalValue, playerTotalValue) {
   if (playerTotalValue > 21) {
     return 'lose' // Player loses
   } else if (dealerTotalValue > 21 || playerTotalValue > dealerTotalValue) {

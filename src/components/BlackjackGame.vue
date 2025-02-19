@@ -1,23 +1,24 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
 import Deck from '@/components/Deck.vue'
-import { GameResult, useGameStore } from "@/store/gameStore.js";
+import {GameResult, useGameStore} from "@/store/gameStore.js";
 // Removed: import {useSimulatorStore} from "@/store/simulatorStore.js";
 import Button from 'primevue/button';
 import Message from 'primevue/message';
-import { storeToRefs } from 'pinia'
-import { calculateTotal, determineResultForPlayer } from "@/utils/deck.js";
-import { getBlackjackMove } from "@/strategy/strategy.js";
+import {storeToRefs} from 'pinia'
+import {calculateTotal, determineResultForHand} from "@/utils/deck.js";
+import {getBlackjackMove} from "@/strategy/strategy.js";
 import Hand from '@/components/Hand.vue'
 
 const autoPlay = ref(false);
 
 const gameStore = useGameStore();
 
+// Track the current player's index (default 0)
+
 // Deconstruct both game and simulator state from gameStore
 const {
   dealerHand,
-  playerMoney,
   betAmount,
   gameResult,
   deck,
@@ -26,51 +27,53 @@ const {
   trueCount,
   totalHandsPlayed,
   totalCardsDealt,
-  players  // New: players array
+  players,  // New: players array
+  currentPlayerIndex,
 } = storeToRefs(gameStore);
 
 const {
   resetDeck,
   dealCard,
   resetSession,
-  endGame,
   maxNumberOfHands,
-  resetHandsPlayed,
   updateRunningCount,
-  resetRunningCount,
   resetSimulator,
   incrementCardsDealt,
 } = gameStore;
 
 const dealerTotal = computed(() => calculateTotal(dealerHand.value))
 
-const isPlayerBust = computed(() => {
-  const hand = players.value[0]?.hands[0];
-  if (!hand || !hand.cards) return false;
-  return calculateTotal(hand.cards) > 21;
+// Update isPlayerBust to check the current player's active hand
+const currentHand = computed(() => players.value[currentPlayerIndex.value]?.hands[0]);
+
+const currentHandTotal = computed(() => calculateTotal(currentHand.value?.cards));
+
+const isCurrentHandBust = computed(() => {
+  if (!currentHand.value || !currentHand.value.cards) return false;
+  return calculateTotal(currentHand.value.cards) > 21;
 });
 
 // New computed property for remaining cards
 const remainingCards = computed(() => deck.value.length);
+
+// New computed property for low deck condition (threshold: 15 cards)
+const notEnoughCards = computed(() => deck.value.length <= 30);
 
 // New computed property for total winnings
 const totalWinnings = computed(() => {
   return players.value.reduce((total, player) => total + (player.money - player.initialMoney), 0);
 });
 
-// New computed property for low deck condition (threshold: 15 cards)
-const notEnoughCards = computed(() => deck.value.length <= 30);
-
 // For hitting, update first player's current hand's "cards" array.
 function hit() {
-  if (!isPlayerBust.value) {
+  if (!isCurrentHandBust.value) {
     const card = dealCard();
     // Push card into the "cards" property of the active hand
-    players.value[0].hands[0].cards.push(card);
+    currentHand.cards.push(card);
     updateRunningCount(card);
     incrementCardsDealt();
   }
-  if (isPlayerBust.value) dealerTurn();
+  if (isCurrentHandBust.value) dealerTurn();
 }
 
 function stand() {
@@ -89,13 +92,6 @@ function continueAutoPlay() {
 
 function dealerTurn() {
 
-  if (isPlayerBust.value) {
-    const result = GameResult.LOSE;
-    endGame(result);
-    continueAutoPlay();
-    return;
-  }
-
   while (calculateTotal(dealerHand.value) < 17) {
     const card = dealCard();
     dealerHand.value.push(card);
@@ -103,8 +99,22 @@ function dealerTurn() {
     incrementCardsDealt();
   }
 
-  const result = determineResultForPlayer(dealerTotal.value, calculateTotal(players.value[0].hands[0].cards));
-  endGame(result);
+  players.value.forEach((player, playerIndex) => {
+    player.handsTotal = player.hands.map(hand => calculateTotal(hand.cards));
+    player.hands.map(hand => {
+      hand.result = determineResultForHand(dealerTotal.value, calculateTotal(hand.cards));
+
+      // TODO: if player hand is blackjack and dealer hand is not, player wins 1.5x bet
+      if ( hand.result === GameResult.WIN) {
+        player.money += hand.betAmount * 2;
+      } else if (hand.result === GameResult.TIE) {
+        player.money += hand.betAmount;
+      }
+    });
+  });
+
+  totalHandsPlayed.value++;
+
   continueAutoPlay();
 
 }
@@ -115,31 +125,68 @@ function reset() {
   gameStore.startGame();
 }
 
+function dealCardToCurrentHand() {
+  const card = dealCard();
+  currentHand.value.cards.push(card);
+  updateRunningCount(card);
+  incrementCardsDealt();
+}
+
 // In playAutomatically and getBlackjackMove usage, refer to players[0].hands[0].cards
 function playAutomatically() {
+  const currentPlayer = players.value[currentPlayerIndex.value];
+  const activeHand = currentPlayer && currentPlayer.hands[0];
 
-  function playNextMove() {
-    if (gameResult.value === GameResult.START) {
-      const move = getBlackjackMove(players.value[0].hands[0].cards, dealerHand.value[0], calculateTotal(players.value[0].hands[0].cards));
-      if (move === 'H') {
-        hit();
-      } else if (move === 'S' || move === 'Ds') {
-        stand();
-      } else if (move === 'D') {
-        hit(); // Assuming double down is not implemented, treat it as a hit
-      } else {
-        console.error('No valid move found');
-      }
+  if (!activeHand || activeHand.result !== null) {
+    // If current player's hand is already resolved, check if all are finished.
+    if (players.value.every(p => !p.hands[0] || p.hands[0].result !== null)) {
+      dealerTurn();
+      return;
+    } else {
+      gameStore.nextPlayer();
+      setTimeout(() => playAutomatically(), 500);
+      return;
     }
   }
 
-  while (gameResult.value === GameResult.START) {
-    playNextMove();
+  // Process current player's active hand until a stand/double move is made or bust occurs
+  while (gameResult.value === GameResult.START && activeHand) {
+
+    if (isCurrentHandBust.value) {
+      break;
+    }
+
+    const move = getBlackjackMove(
+        activeHand.cards,
+        dealerHand.value[0],
+        currentHandTotal.value,
+    );
+
+    if (move === 'H') {
+      dealCardToCurrentHand();
+    } else if (move === 'D') {
+      dealCardToCurrentHand();
+    } else if (move === 'S' || move === 'Ds') {
+      break;
+    } else {
+      console.error('No valid move found', activeHand.cards, dealerHand.value[0]);
+      break;
+    }
+
   }
+
+  // After ending the turn, check if all players have played
+  if (currentPlayerIndex.value === players.value.length - 1) {
+    dealerTurn();
+  } else {
+    setTimeout(() => playAutomatically(), 500);
+  }
+
+  // End current player's turn via stand
+  gameStore.playerStand();
 
 }
 
-// New function to stop autoplay
 function stopAutoPlay() {
   autoPlay.value = false;
 }
@@ -167,14 +214,14 @@ onMounted(() => {
 <template>
   <div class="blackjack-game">
     <!-- Include the Deck component and set a ref to access its deck -->
-    <Deck ref="deckComp" :deck="deck" />
+    <Deck ref="deckComp" :deck="deck"/>
 
     <Message v-if="notEnoughCards" severity="error" size="large" style="margin-top: 10px;">
       Not enough cards left in the deck!
     </Message>
 
     <h2>Dealer's Hand (Total: {{ dealerTotal }})</h2>
-    <Hand :hand="dealerHand" />
+    <Hand :hand="dealerHand"/>
 
     <!-- Display each player's hands and show hand result -->
     <div v-for="(player, pIndex) in players" :key="pIndex" class="player-section">
@@ -190,10 +237,10 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="isPlayerBust" class="bust-message">Player is bust!</div>
+    <div v-if="isCurrentHandBust" class="bust-message">Player is bust!</div>
 
     <div class="player-actions">
-      <Button @click="hit" :disabled="isPlayerBust">Hit</Button>
+      <Button @click="hit" :disabled="isCurrentHandBust">Hit</Button>
       <Button @click="stand">Stand</Button>
     </div>
 
@@ -201,7 +248,7 @@ onMounted(() => {
       <Button class="restart-button" @click="gameStore.startGame">New Game</Button>
       <Button class="reset-session-button" @click="reset">Reset</Button>
       <Button class="auto-play-button"
-        @click="() => { autoPlay = true; gameStore.startGame(); playAutomatically(); }">Auto Play
+              @click="() => { autoPlay = true; gameStore.startGame(); playAutomatically(); }">Auto Play
       </Button>
       <Button class="stop-auto-play-button" @click="stopAutoPlay">Stop Auto Play</Button>
     </div>
@@ -268,12 +315,12 @@ onMounted(() => {
       </Message>
 
       <Message v-else-if="gameResult === GameResult.LOSE" class="game-result lose" :severity="messageSeverity"
-        size="large">
+               size="large">
         Player loses!
       </Message>
 
       <Message v-else-if="gameResult === GameResult.TIE" class="game-result tie" :severity="messageSeverity"
-        size="large">
+               size="large">
         It's a tie!
       </Message>
 
